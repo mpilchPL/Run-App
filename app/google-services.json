@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "23458906724",
+    "firebase_url": "https://centering-cable-240811.firebaseio.com",
+    "project_id": "centering-cable-240811",
+    "storage_bucket": "centering-cable-240811.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:23458906724:android:0c9723092c6993de",
+        "android_client_info": {
+          "package_name": "com.example.mapyv2"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "23458906724-6q0ae13cbk1oq42q2e26nf2mu37ddhq2.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.mapyv2",
+            "certificate_hash": "8608bff30d3734567b87d617cf74fdf761cf9f6f"
+          }
+        },
+        {
+          "client_id": "23458906724-v88goec103m919kf1hk9he5k5kvpfr9u.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDqMeAGAlpg715-aRg3X8-RcMWMs9bafg8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "23458906724-v88goec103m919kf1hk9he5k5kvpfr9u.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
