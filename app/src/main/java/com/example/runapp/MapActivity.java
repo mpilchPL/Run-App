@@ -2,17 +2,24 @@ package com.example.runapp;
 
 
 import android.Manifest;
+import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
+import android.location.Address;
+import android.location.Geocoder;
 import android.location.Location;
 import android.os.Bundle;
 import android.os.PersistableBundle;
+import android.os.SystemClock;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 import android.support.v4.app.ActivityCompat;
 import android.support.v4.content.ContextCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
+import android.view.KeyEvent;
+import android.view.View;
+import android.view.inputmethod.EditorInfo;
 import android.widget.Button;
 import android.widget.Chronometer;
 import android.widget.EditText;
@@ -38,6 +45,7 @@ import com.google.android.gms.tasks.Task;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseUser;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -107,8 +115,80 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
     }
 
     private void init() {
-        
+        //<editor-fold desc="MAP WIDGETS LISTENERS">
+        /*========================= MAP WIDGETS LISTENERS =============================*/
+        mSearchText.setOnEditorActionListener(new TextView.OnEditorActionListener() {
+            @Override
+            public boolean onEditorAction(TextView textView, int actionId, KeyEvent keyEvent) {
+                if (actionId == EditorInfo.IME_ACTION_SEARCH
+                        || actionId == EditorInfo.IME_ACTION_DONE
+                        || keyEvent.getAction() == KeyEvent.ACTION_DOWN
+                        || keyEvent.getAction() == KeyEvent.KEYCODE_ENTER) {
+                    geoLocate();
+                }
+                return false;
+            }
+        });
+
+        mGps.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                getDeviceLocation();
+            }
+        });
+
+        /*========================== BUTTONS LISTENERS ===============================*/
+        //</editor-fold>
+
+        btnMyRuns.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                // TODO DODAC ACTIVITY DO MYTRACES)
+            }
+        });
+
+        btnStart.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                getCurrentLocation();
+                startLocationUpdates();
+                timeCM.setBase(SystemClock.elapsedRealtime());
+                timeCM.start();
+
+            }
+        });
+
+        btnStop.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                stopLocationUpdates();
+                Log.d(TAG, "onClick: LOCATION UPDATES ENDED, LOCATIONS: " + coordList.size());
+                timeCM.stop();
+
+                if (currentUser == null) {
+                    return;
+                } else {
+                    dbRef.child(uID).child(String.valueOf(userRuns)).child("distance").setValue(completeDistance);
+                    dbRef.child(uID).child(String.valueOf(userRuns)).child("time").setValue(completeCalories);
+                    dbRef.child(uID).child("runs").setValue(userRuns + 1);
+                    Log.d(TAG, "onClick: value set");
+
+                }
+                //TODO
+                // ZAPISAC WYNIKI DO BAZY DANYCH
+                // WYMYC TRASE
+                // WYCZYSCIC LISTY
+            }
+        });
+
+
+
+
+        /*=============================================================================*/
     }
+
+
+
     private void getLocationPermissions() {
 
         if (ContextCompat.checkSelfPermission(this.getApplicationContext(), FINE_LOC) == PackageManager.PERMISSION_GRANTED) {
@@ -224,4 +304,52 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         Keyboard.hide(this);
 
     }
+
+    protected void createLocationRequest() {
+        locationRequest = LocationRequest.create();
+        locationRequest.setInterval(MAX_LOC_INTERVAL);
+        locationRequest.setFastestInterval(MIN_LOC_INTERVAL);
+        locationRequest.setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY);
+    }
+
+    private void geoLocate() {
+        Log.d(TAG, "geoLocate: geolocating");
+        String searchString = mSearchText.getText().toString();
+        Geocoder geocoder = new Geocoder(MapActivity.this);
+        List<Address> list = new ArrayList<>();
+        try {
+            list = geocoder.getFromLocationName(searchString, 1);
+        } catch (IOException e) {
+            Log.e(TAG, "geoLocate: IOException" + e.getMessage());
+        }
+
+        if (list.size() > 0) {
+            Address address = list.get(0);
+
+            Log.d(TAG, "geoLocate: found location: " + address.toString());
+            moveCamera(new LatLng(address.getLatitude(), address.getLongitude()), isAplace(address) ? DEFAULT_ZOOM : COUNTRY_ZOOM, address.getAddressLine(0));
+        }
+    }
+
+    private boolean isAplace(Address address) {
+        if (address.getPostalCode() != null)
+            return true;
+        return false;
+    }
+
+    public void clearSearchBar(View view) {
+        mSearchText.setText("");
+        Log.d(TAG, "say: cleared search bar");
+    }
+
+    public void search(View view) {
+        if (mSearchText.length() > 0) {
+            geoLocate();
+            Log.d(TAG, "search: search btn clicked");
+            Keyboard.hide(this);
+        }
+
+    }
 }
+
+
