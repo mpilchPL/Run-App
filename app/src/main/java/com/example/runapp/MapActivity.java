@@ -45,6 +45,11 @@ import com.google.android.gms.tasks.OnCompleteListener;
 import com.google.android.gms.tasks.Task;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseUser;
+import com.google.firebase.database.DataSnapshot;
+import com.google.firebase.database.DatabaseError;
+import com.google.firebase.database.DatabaseReference;
+import com.google.firebase.database.FirebaseDatabase;
+import com.google.firebase.database.ValueEventListener;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -65,7 +70,6 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
     private static final int MIN_LOC_INTERVAL = 8000;          // Min location update interval (miliseconds)
 
 
-    private String uID = "";
     //widgets
     private EditText mSearchText;
     private Button btnMyRuns, btnStart, btnStop;
@@ -94,6 +98,13 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
 
     private FirebaseAuth mAuth = FirebaseAuth.getInstance();
     private FirebaseAuth.AuthStateListener mAuthListener;
+
+    // =====DATABASE========
+    private FirebaseDatabase db = FirebaseDatabase.getInstance();
+    private DatabaseReference dbRef = db.getReference();
+    private String uID = "";
+    private long userRuns = 0;
+
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -128,6 +139,27 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         timeCM = findViewById(R.id.chronometer);
         timeCM.setBase(SystemClock.elapsedRealtime());
         //</editor-fold>
+
+        dbRef.addValueEventListener(new ValueEventListener() {
+            @Override
+            public void onDataChange(DataSnapshot dataSnapshot) {
+
+                if (dataSnapshot.getValue() == null) {
+                    createUser();
+                }
+
+              //  getUsersRuns(dataSnapshot);
+                // This method is called once with the initial value and again
+                // whenever data at this location is updated.
+                Object value = dataSnapshot.getValue();
+                Log.d(TAG, "Value is: " + value);
+            }
+            @Override
+            public void onCancelled(DatabaseError error) {
+                // Failed to read value
+                Log.w(TAG, "Failed to read value.", error.toException());
+            }
+        });
     }
 
     private void init() {
@@ -160,6 +192,15 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
             @Override
             public void onClick(View view) {
                 // TODO DODAC ACTIVITY DO MYTRACES)
+
+                if (currentUser == null) {
+                    Toast.makeText(MapActivity.this, "Access for logged users only", Toast.LENGTH_SHORT).show();
+                    return;
+                }
+
+                Intent intent = new Intent(MapActivity.this, DataActivity.class);
+                startActivity(intent);
+
             }
         });
 
@@ -181,6 +222,15 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
                 Log.d(TAG, "onClick: LOCATION UPDATES ENDED, LOCATIONS: " + coordList.size());
                 timeCM.stop();
 
+                if (currentUser == null) {
+                    return;
+                } else {
+                    dbRef.child(uID).child(String.valueOf(userRuns)).child("distance").setValue(completeDistance);
+                    dbRef.child(uID).child(String.valueOf(userRuns)).child("time").setValue(completeCalories);
+                    dbRef.child(uID).child("runs").setValue(userRuns + 1);
+                    Log.d(TAG, "onClick: value set");
+
+                }
 
                 //TODO
                 // ZAPISAC WYNIKI DO BAZY DANYCH
@@ -456,6 +506,14 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
             mAuth.removeAuthStateListener(mAuthListener);
         }
     }
+
+    private void createUser() {
+        String id = currentUser.getUid();
+        Log.d(TAG, "createUser: ############################## ");
+        dbRef.child(id).child("runs").setValue(0);
+    }
+
+
 }
 
 
