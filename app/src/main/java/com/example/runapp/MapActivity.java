@@ -19,6 +19,7 @@ import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
 import android.view.KeyEvent;
 import android.view.View;
+import android.view.Window;
 import android.view.inputmethod.EditorInfo;
 import android.widget.Button;
 import android.widget.Chronometer;
@@ -65,7 +66,6 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
     private static final float DEFAULT_ZOOM = 15;
     private static final float COUNTRY_ZOOM = 5;
     private static final String MY_LOCATION = "My location";
-    private static final int AUTOCOMPLETE_REQUEST_CODE = 1;
     private static final int MAX_LOC_INTERVAL = 10000;          // Max location update interval (miliseconds)
     private static final int MIN_LOC_INTERVAL = 8000;          // Min location update interval (miliseconds)
 
@@ -82,8 +82,6 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
     private FusedLocationProviderClient mFusedLocationProvidedClient;
     private FirebaseUser currentUser;
     private Location mCurrentLocation;
-
-    /*======= map vars =========*/
     private LocationRequest locationRequest;
     private LocationCallback locationCallback;
     private List<Location> locationList = new ArrayList<>();
@@ -92,30 +90,29 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
     private Polyline route;
     private PolylineOptions routeOpt = new PolylineOptions();
 
-    private float completeDistance = 0.0f;
+    private float completeDistance = 0f;
     private float completeCalories = 0f;
+
 
 
     private FirebaseAuth mAuth = FirebaseAuth.getInstance();
     private FirebaseAuth.AuthStateListener mAuthListener;
-
     // =====DATABASE========
     private FirebaseDatabase db = FirebaseDatabase.getInstance();
     private DatabaseReference dbRef = db.getReference();
     private String uID = "";
     private long userRuns = 0;
 
-
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setContentView(R.layout.act_map);
+
         currentUser = mAuth.getCurrentUser();
         if (currentUser != null) {
             uID = currentUser.getUid();
             Log.d(TAG, "onCreate: user  id" + uID);
-
         }
+
         mAuthListener = new FirebaseAuth.AuthStateListener() {
             @Override
             public void onAuthStateChanged(@NonNull FirebaseAuth firebaseAuth) {
@@ -124,6 +121,33 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         };
 
 
+        // Read from the database
+        dbRef.addValueEventListener(new ValueEventListener() {
+            @Override
+            public void onDataChange(DataSnapshot dataSnapshot) {
+
+                if (dataSnapshot.getValue() == null) {
+                    createUser();
+                }
+                if (currentUser != null)
+                    getUsersRuns(dataSnapshot);
+                // This method is called once with the initial value and again
+                // whenever data at this location is updated.
+                Object value = dataSnapshot.getValue();
+                Log.d(TAG, "Value is: " + value);
+            }
+            @Override
+            public void onCancelled(DatabaseError error) {
+                // Failed to read value
+                Log.w(TAG, "Failed to read value.", error.toException());
+            }
+        });
+
+
+        if(currentUser != null)
+            Log.d(TAG, "onCreate: user user user " + currentUser.getDisplayName() + " " + uID);
+
+        setContentView(R.layout.act_map);
         getLocationPermissions();
         createLocationRequest();
         createLocationCallback();
@@ -140,27 +164,28 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         timeCM.setBase(SystemClock.elapsedRealtime());
         //</editor-fold>
 
-        dbRef.addValueEventListener(new ValueEventListener() {
-            @Override
-            public void onDataChange(DataSnapshot dataSnapshot) {
 
-                if (dataSnapshot.getValue() == null) {
-                    createUser();
-                }
-
-              //  getUsersRuns(dataSnapshot);
-                // This method is called once with the initial value and again
-                // whenever data at this location is updated.
-                Object value = dataSnapshot.getValue();
-                Log.d(TAG, "Value is: " + value);
-            }
-            @Override
-            public void onCancelled(DatabaseError error) {
-                // Failed to read value
-                Log.w(TAG, "Failed to read value.", error.toException());
-            }
-        });
     }
+
+    @Override
+    public void onMapReady(GoogleMap googleMap) {
+        Toast.makeText(this, "Map is Ready", Toast.LENGTH_SHORT).show();
+        mMap = googleMap;
+
+        if (mLocPermissionGranted) {
+            getDeviceLocation();
+            if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED
+                    && ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+                return;
+            }
+            mMap.setMyLocationEnabled(true);
+            mMap.getUiSettings().setMyLocationButtonEnabled(false);
+
+            init();
+
+        }
+    }
+
 
     private void init() {
         //<editor-fold desc="MAP WIDGETS LISTENERS">
@@ -191,7 +216,6 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         btnMyRuns.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-                // TODO DODAC ACTIVITY DO MYTRACES)
 
                 if (currentUser == null) {
                     Toast.makeText(MapActivity.this, "Access for logged users only", Toast.LENGTH_SHORT).show();
@@ -221,21 +245,37 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
                 stopLocationUpdates();
                 Log.d(TAG, "onClick: LOCATION UPDATES ENDED, LOCATIONS: " + coordList.size());
                 timeCM.stop();
-
+                String timePassed = String.valueOf((int)((SystemClock.elapsedRealtime() - timeCM.getBase()) / 1000));
+                timeCM.setBase(SystemClock.elapsedRealtime());
+                Log.d(TAG, "onClick: " +timePassed);
                 if (currentUser == null) {
+                    completeCalories = 0;
+                    completeDistance = 0;
+                    if (route != null) {
+                        route.remove();
+                    }
+                    routeOpt = new PolylineOptions();
+                    locationList.clear();
+                    coordList.clear();
                     return;
                 } else {
-                    dbRef.child(uID).child(String.valueOf(userRuns)).child("distance").setValue(completeDistance);
-                    dbRef.child(uID).child(String.valueOf(userRuns)).child("time").setValue(completeCalories);
+                    dbRef.child(uID).child(String.valueOf(userRuns)).child("distance").setValue(String.valueOf((int)completeDistance));
+                    dbRef.child(uID).child(String.valueOf(userRuns)).child("time").setValue(timePassed);
                     dbRef.child(uID).child("runs").setValue(userRuns + 1);
                     Log.d(TAG, "onClick: value set");
 
                 }
 
-                //TODO
-                // ZAPISAC WYNIKI DO BAZY DANYCH
-                // WYMYC TRASE
-                // WYCZYSCIC LISTY
+                completeCalories = 0;
+                completeDistance = 0;
+                if (route != null) {
+                    route.remove();
+                }
+                routeOpt = new PolylineOptions();
+                locationList.clear();
+                coordList.clear();
+                caloriesTV.setText("0");
+                distanceTV.setText("0");
             }
         });
 
@@ -245,163 +285,25 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         /*=============================================================================*/
     }
 
-
-
-    private void getLocationPermissions() {
-
-        if (ContextCompat.checkSelfPermission(this.getApplicationContext(), FINE_LOC) == PackageManager.PERMISSION_GRANTED) {
-            if (ContextCompat.checkSelfPermission(this.getApplicationContext(), COARSE_LOC) == PackageManager.PERMISSION_GRANTED) {
-                mLocPermissionGranted = true;
-                initMap();
-            } else {
-                ActivityCompat.requestPermissions(this, permissions, LOC_PERM_REQUEST_CODE);
+    private void getUsersRuns(DataSnapshot dataSnapshot) {
+        for (DataSnapshot ds : dataSnapshot.getChildren()) {
+            if (ds.getKey().equals(currentUser.getUid())) {
+                UserInfo userInfo = new UserInfo();
+                userInfo.setRuns(ds.getValue(UserInfo.class).getRuns());
+                userRuns = userInfo.getRuns();
+                Log.d(TAG, "getUsersRuns: user ID: " + userInfo.getRuns());
             }
-        } else {
-            ActivityCompat.requestPermissions(this, permissions, LOC_PERM_REQUEST_CODE);
-        }
-    }
-
-    @Override
-    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions,
-                                           @NonNull int[] grantResults) {
-        mLocPermissionGranted = false;
-        switch (requestCode) {
-            case LOC_PERM_REQUEST_CODE:
-                if (grantResults.length > 0) {
-                    for (int i = 0; i < grantResults.length; i++) {
-                        if (grantResults[i] != PackageManager.PERMISSION_GRANTED) {
-                            mLocPermissionGranted = false;
-                            return;
-                        }
-                    }
-                    mLocPermissionGranted = true;
-                    initMap();
-                }
-        }
-    }
-
-    private void initMap() {
-        SupportMapFragment mapFragment = (SupportMapFragment) getSupportFragmentManager().findFragmentById(R.id.map);
-
-        mapFragment.getMapAsync(MapActivity.this);
-    }
-
-
-    @Override
-    public void onMapReady(GoogleMap googleMap) {
-        Toast.makeText(this, "Map is Ready", Toast.LENGTH_SHORT).show();
-        mMap = googleMap;
-
-        if (mLocPermissionGranted) {
-            getDeviceLocation();
-            if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED
-                    && ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-                return;
-            }
-            mMap.setMyLocationEnabled(true);
-            mMap.getUiSettings().setMyLocationButtonEnabled(false);
-
-            init();
-
-            /* ====================== CREATING LAT_LNG, POLYLINE FOR TESTS ========================*/
-
-
-            LatLng origin = new LatLng(37.420914, -122.085371);
-            LatLng chpt1 = new LatLng(37.420786, -122.082910);
-            LatLng chpt2 = new LatLng(37.416761, -122.082948);
-
-            routeOpt = new PolylineOptions()
-                    .add(origin)
-                    .add(chpt1)
-                    .add(chpt2);
-
-            route = mMap.addPolyline(routeOpt);
-            route.setColor(Color.BLUE);
-            route.setVisible(true);
-
-
-
-            /*============================================================================*/
-        }
-    }
-
-    private void getDeviceLocation() {
-        mFusedLocationProvidedClient = LocationServices.getFusedLocationProviderClient(this);
-
-        try {
-            if (mLocPermissionGranted) {
-                final Task location = mFusedLocationProvidedClient.getLastLocation();
-                location.addOnCompleteListener(new OnCompleteListener() {
-                    @Override
-                    public void onComplete(@NonNull Task task) {
-                        if (task.isSuccessful()) {
-                            Log.d(TAG, "onComplete: found loc");
-                            Location currentLocation = (Location) task.getResult();
-                            moveCamera(new LatLng(currentLocation.getLatitude(), currentLocation.getLongitude()), DEFAULT_ZOOM, MY_LOCATION);
-                        } else {
-                            Log.d(TAG, "onComplete: current location is null");
-                            Toast.makeText(MapActivity.this, "unable to get current location", Toast.LENGTH_SHORT).show();
-                        }
-                    }
-                });
-            }
-        } catch (SecurityException e) {
-            Log.e(TAG, "getDeviceLocation: SecurityException: " + e.getMessage());
 
         }
-    }
-
-    private void moveCamera(LatLng latLng, float zoom, String title) {
-        Log.d(TAG, "moveCamera: moving a camera to: " + latLng.latitude + " " + latLng.longitude);
-        mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(latLng, zoom));
-
-        if (!title.equals(MY_LOCATION)) {
-            MarkerOptions options = new MarkerOptions().position(latLng).title(title);
-            mMap.addMarker(options);
-        }
-        Keyboard.hide(this);
 
     }
+
 
     protected void createLocationRequest() {
         locationRequest = LocationRequest.create();
         locationRequest.setInterval(MAX_LOC_INTERVAL);
         locationRequest.setFastestInterval(MIN_LOC_INTERVAL);
         locationRequest.setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY);
-    }
-
-    private void createLocationCallback() {
-        locationCallback = new LocationCallback() {
-            @Override
-            public void onLocationResult(LocationResult locationResult) {
-                if (locationResult == null) {
-                    Log.d(TAG, "onLocationResult: NO LOCATION RESULT");
-                    return;
-                }
-
-                mCurrentLocation = locationResult.getLastLocation();
-                Log.d(TAG, "onLocationResult: tick" + mCurrentLocation);
-                locationList.add(mCurrentLocation);
-                coordList.add(new LatLng(mCurrentLocation.getLatitude(), mCurrentLocation.getLongitude()));
-                if (locationList.size() > 2) {
-
-                    //CALCULATE DISTANCE
-                    float distance = locationList.get(locationList.size() - 1).distanceTo
-                            (locationList.get(locationList.size() - 2));
-                    completeDistance += distance;
-                    distanceTV.setText((int) completeDistance);
-                    // CALCULATE CALORIES - 0.062 kcal for each meter
-                    completeCalories = completeDistance * 0.062f;
-                    caloriesTV.setText((int) completeCalories);
-
-                    if (distance < 10) {
-                        Log.d(TAG, "onLocationResult: DISTANCE TOO SHORT TO UPDATE ROUTES " + distance);
-                    } else {
-                        drawRoute();
-                    }
-                }
-            }
-        };
     }
 
     private void geoLocate() {
@@ -443,6 +345,53 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
 
     }
 
+    private void initMap() {
+
+        SupportMapFragment mapFragment = (SupportMapFragment) getSupportFragmentManager().findFragmentById(R.id.map);
+
+        mapFragment.getMapAsync(MapActivity.this);
+    }
+
+    private void getLocationPermissions() {
+
+        if (ContextCompat.checkSelfPermission(this.getApplicationContext(), FINE_LOC) == PackageManager.PERMISSION_GRANTED) {
+            if (ContextCompat.checkSelfPermission(this.getApplicationContext(), COARSE_LOC) == PackageManager.PERMISSION_GRANTED) {
+                mLocPermissionGranted = true;
+                initMap();
+            } else {
+                ActivityCompat.requestPermissions(this, permissions, LOC_PERM_REQUEST_CODE);
+            }
+        } else {
+            ActivityCompat.requestPermissions(this, permissions, LOC_PERM_REQUEST_CODE);
+        }
+    }
+
+    private void getDeviceLocation() {
+        mFusedLocationProvidedClient = LocationServices.getFusedLocationProviderClient(this);
+
+        try {
+            if (mLocPermissionGranted) {
+                final Task location = mFusedLocationProvidedClient.getLastLocation();
+                location.addOnCompleteListener(new OnCompleteListener() {
+                    @Override
+                    public void onComplete(@NonNull Task task) {
+                        if (task.isSuccessful()) {
+                            Log.d(TAG, "onComplete: found loc");
+                            Location currentLocation = (Location) task.getResult();
+                            moveCamera(new LatLng(currentLocation.getLatitude(), currentLocation.getLongitude()), DEFAULT_ZOOM, MY_LOCATION);
+                        } else {
+                            Log.d(TAG, "onComplete: current location is null");
+                            Toast.makeText(MapActivity.this, "unable to get current location", Toast.LENGTH_SHORT).show();
+                        }
+                    }
+                });
+            }
+        } catch (SecurityException e) {
+            Log.e(TAG, "getDeviceLocation: SecurityException: " + e.getMessage());
+
+        }
+    }
+
     private void getCurrentLocation() {
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED
                 && ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
@@ -459,6 +408,74 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
             }
         });
 
+    }
+
+    private void moveCamera(LatLng latLng, float zoom, String title) {
+        Log.d(TAG, "moveCamera: moving a camera to: " + latLng.latitude + " " + latLng.longitude);
+        mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(latLng, zoom));
+
+        if (!title.equals(MY_LOCATION)) {
+            MarkerOptions options = new MarkerOptions().position(latLng).title(title);
+            mMap.addMarker(options);
+        }
+        Keyboard.hide(this);
+
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
+        mLocPermissionGranted = false;
+        switch (requestCode) {
+            case LOC_PERM_REQUEST_CODE:
+                if (grantResults.length > 0) {
+                    for (int i = 0; i < grantResults.length; i++) {
+                        if (grantResults[i] != PackageManager.PERMISSION_GRANTED) {
+                            mLocPermissionGranted = false;
+                            return;
+                        }
+                    }
+                    mLocPermissionGranted = true;
+                    initMap();
+                }
+        }
+    }
+
+
+    private void createLocationCallback() {
+        locationCallback = new LocationCallback() {
+            @Override
+            public void onLocationResult(LocationResult locationResult) {
+                if (locationResult == null) {
+                    Log.d(TAG, "onLocationResult: NO LOCATION RESULT");
+                    return;
+                }
+
+                mCurrentLocation = locationResult.getLastLocation();
+                Log.d(TAG, "onLocationResult: tick" + mCurrentLocation);
+                locationList.add(mCurrentLocation);
+                coordList.add(new LatLng(mCurrentLocation.getLatitude(), mCurrentLocation.getLongitude()));
+                if (locationList.size() > 2) {
+
+                    //CALCULATE DISTANCE
+                    float distance = locationList.get(locationList.size() - 1).distanceTo
+                            (locationList.get(locationList.size() - 2));
+                    completeDistance += distance;
+                    if (completeDistance > 0) {
+                        distanceTV.setText(String.valueOf((int) completeDistance));
+                        completeCalories = completeDistance * 0.062f;
+                        caloriesTV.setText(String.valueOf((int) completeCalories));
+                    }
+                    // CALCULATE CALORIES - 0.062 kcal for each meter
+
+
+                    if (distance < 10) {
+                        Log.d(TAG, "onLocationResult: DISTANCE TOO SHORT TO UPDATE ROUTES " + distance);
+                    } else {
+                        drawRoute();
+                    }
+                }
+            }
+        };
     }
 
     private void startLocationUpdates() {
@@ -512,8 +529,6 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         Log.d(TAG, "createUser: ############################## ");
         dbRef.child(id).child("runs").setValue(0);
     }
-
-
 }
 
 
