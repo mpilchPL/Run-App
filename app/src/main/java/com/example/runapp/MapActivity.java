@@ -165,15 +165,7 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
                 Log.d(TAG, "onClick: LOCATION UPDATES ENDED, LOCATIONS: " + coordList.size());
                 timeCM.stop();
 
-                if (currentUser == null) {
-                    return;
-                } else {
-                    dbRef.child(uID).child(String.valueOf(userRuns)).child("distance").setValue(completeDistance);
-                    dbRef.child(uID).child(String.valueOf(userRuns)).child("time").setValue(completeCalories);
-                    dbRef.child(uID).child("runs").setValue(userRuns + 1);
-                    Log.d(TAG, "onClick: value set");
 
-                }
                 //TODO
                 // ZAPISAC WYNIKI DO BAZY DANYCH
                 // WYMYC TRASE
@@ -350,6 +342,41 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         }
 
     }
+
+    private void getCurrentLocation() {
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED
+                && ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this, permissions, LOC_PERM_REQUEST_CODE);
+            return;
+        }
+        final Task locate = mFusedLocationProvidedClient.getLastLocation();
+        locate.addOnCompleteListener(new OnCompleteListener() {
+            @Override
+            public void onComplete(@NonNull Task task) {
+                if (task.isSuccessful()) {
+                    mCurrentLocation = (Location) task.getResult();
+                }
+            }
+        });
+
+    }
+
+    private void startLocationUpdates() {
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED &&
+                ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this, permissions, LOC_PERM_REQUEST_CODE);
+            return;
+        }
+        mFusedLocationProvidedClient.requestLocationUpdates(locationRequest, locationCallback, null);
+    }
+
+    private void stopLocationUpdates() {
+        mFusedLocationProvidedClient.removeLocationUpdates(locationCallback);
+    }
+
+
 }
+
+
 
 
