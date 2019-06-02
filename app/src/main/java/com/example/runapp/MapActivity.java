@@ -31,6 +31,7 @@ import com.example.runapp.utils.Keyboard;
 import com.google.android.gms.location.FusedLocationProviderClient;
 import com.google.android.gms.location.LocationCallback;
 import com.google.android.gms.location.LocationRequest;
+import com.google.android.gms.location.LocationResult;
 import com.google.android.gms.location.LocationServices;
 import com.google.android.gms.maps.CameraUpdateFactory;
 import com.google.android.gms.maps.GoogleMap;
@@ -77,6 +78,8 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
     private FusedLocationProviderClient mFusedLocationProvidedClient;
     private FirebaseUser currentUser;
     private Location mCurrentLocation;
+
+    /*======= map vars =========*/
     private LocationRequest locationRequest;
     private LocationCallback locationCallback;
     private List<Location> locationList = new ArrayList<>();
@@ -111,7 +114,20 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
 
 
         getLocationPermissions();
+        createLocationRequest();
+        createLocationCallback();
 
+        //<editor-fold desc="buttons & widget init">
+        mSearchText = findViewById(R.id.input_search);
+        mGps = findViewById(R.id.ic_gps);
+        btnMyRuns = findViewById(R.id.btn_run_history);
+        btnStart = findViewById(R.id.btn_start);
+        btnStop = findViewById(R.id.btn_stop);
+        distanceTV = findViewById(R.id.distance);
+        caloriesTV = findViewById(R.id.calories);
+        timeCM = findViewById(R.id.chronometer);
+        timeCM.setBase(SystemClock.elapsedRealtime());
+        //</editor-fold>
     }
 
     private void init() {
@@ -304,6 +320,40 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         locationRequest.setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY);
     }
 
+    private void createLocationCallback() {
+        locationCallback = new LocationCallback() {
+            @Override
+            public void onLocationResult(LocationResult locationResult) {
+                if (locationResult == null) {
+                    Log.d(TAG, "onLocationResult: NO LOCATION RESULT");
+                    return;
+                }
+
+                mCurrentLocation = locationResult.getLastLocation();
+                Log.d(TAG, "onLocationResult: tick" + mCurrentLocation);
+                locationList.add(mCurrentLocation);
+                coordList.add(new LatLng(mCurrentLocation.getLatitude(), mCurrentLocation.getLongitude()));
+                if (locationList.size() > 2) {
+
+                    //CALCULATE DISTANCE
+                    float distance = locationList.get(locationList.size() - 1).distanceTo
+                            (locationList.get(locationList.size() - 2));
+                    completeDistance += distance;
+                    distanceTV.setText((int) completeDistance);
+                    // CALCULATE CALORIES - 0.062 kcal for each meter
+                    completeCalories = completeDistance * 0.062f;
+                    caloriesTV.setText((int) completeCalories);
+
+                    if (distance < 10) {
+                        Log.d(TAG, "onLocationResult: DISTANCE TOO SHORT TO UPDATE ROUTES " + distance);
+                    } else {
+                        drawRoute();
+                    }
+                }
+            }
+        };
+    }
+
     private void geoLocate() {
         Log.d(TAG, "geoLocate: geolocating");
         String searchString = mSearchText.getText().toString();
@@ -374,7 +424,38 @@ public class MapActivity extends AppCompatActivity implements OnMapReadyCallback
         mFusedLocationProvidedClient.removeLocationUpdates(locationCallback);
     }
 
+    private void drawRoute() {
 
+        updatePolylineOptions();
+        if (route != null) {
+            route.remove();
+        }
+        route = mMap.addPolyline(routeOpt);
+        route.setVisible(true);
+
+    }
+
+    private void updatePolylineOptions() {
+        routeOpt = new PolylineOptions();
+
+        for (LatLng latLng : coordList) {
+            routeOpt.add(latLng);
+        }
+    }
+
+    @Override
+    protected void onStart() {
+        super.onStart();
+        mAuth.addAuthStateListener(mAuthListener);
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        if (mAuthListener != null){
+            mAuth.removeAuthStateListener(mAuthListener);
+        }
+    }
 }
 
 
